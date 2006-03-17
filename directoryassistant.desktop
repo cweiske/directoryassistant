@@ -1,0 +1,12 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Directory assistant
+Name[nl]=Adresboek assistent
+Comment=LDAP addressbook
+Comment[en]=LDAP adresboek
+Exec=directoryassistant
+Icon=directoryassistant.png
+Terminal=false
+Type=Application
+StartupNotify=false
+Categories=GTK;GNOME;Application;Office;

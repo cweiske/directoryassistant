@@ -1,0 +1,161 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2006-01-15 18:07+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: directoryassistant:33
+msgid "Common name"
+msgstr "Naam"
+
+#: directoryassistant:34
+msgid "Surname"
+msgstr "Achternaam"
+
+#: directoryassistant:35
+msgid "Given name"
+msgstr "Voornaam"
+
+#: directoryassistant:36
+msgid "Organisation"
+msgstr "Organisatie"
+
+#: directoryassistant:37
+msgid "Email"
+msgstr "Email"
+
+#: directoryassistant:38
+msgid "Business phone number"
+msgstr "Werk telefoon nummer"
+
+#: directoryassistant:39
+msgid "Fax number"
+msgstr "Fax nummer"
+
+#: directoryassistant:40
+msgid "Mobile phone number"
+msgstr "Mobiele telefoon nummer"
+
+#: directoryassistant:41
+msgid "Street"
+msgstr "Straat"
+
+#: directoryassistant:42
+msgid "P.O. Box"
+msgstr "Postbus"
+
+#: directoryassistant:43
+msgid "Postal address"
+msgstr "Postadres"
+
+#: directoryassistant:44
+msgid "Postal code"
+msgstr "Postcode"
+
+#: directoryassistant:45
+msgid "Locality"
+msgstr "Plaats"
+
+#: directoryassistant:46
+msgid "Home phone number"
+msgstr "Huis telefoon nummer"
+
+#: directoryassistant:47
+msgid "Home address"
+msgstr "Huis adres"
+
+#: directoryassistant:48
+msgid "Description"
+msgstr "Beschrijving"
+
+#: directoryassistant:184
+msgid "No name"
+msgstr "Geen naam"
+
+#: directoryassistant:353
+msgid "Edit Address"
+msgstr "Bewerk adres"
+
+#: directoryassistant:441
+msgid "Ldap url"
+msgstr "Ldap url"
+
+#: directoryassistant:446
+msgid "Base dn"
+msgstr "Base dn"
+
+#: directoryassistant:451
+msgid "Bind dn"
+msgstr "Bind dn"
+
+#: directoryassistant:456
+msgid "Password"
+msgstr "Wachtwoord"
+
+#: directoryassistant:461
+msgid "Default search"
+msgstr "Standaard zoekopdracht"
+
+#: directoryassistant:466
+msgid "Ldap version"
+msgstr "Ldap versie"
+
+#: directoryassistant:485
+msgid "Server name"
+msgstr "Server naam"
+
+#: directoryassistant:500
+msgid "Action on click"
+msgstr "Actie bij muisklik"
+
+#: directoryassistant:507
+msgid "Hide"
+msgstr "Verberg"
+
+#: directoryassistant:550
+msgid "Directory Assistant Settings"
+msgstr "Adresboek assistent instellingen"
+
+#: directoryassistant:561
+msgid "Servers"
+msgstr "Servers"
+
+#: directoryassistant:565
+msgid "Fields"
+msgstr "Velden"
+
+#: directoryassistant:725
+msgid "address server not available"
+msgstr "adresboek server niet beschikbaar"
+
+#: directoryassistant:753
+msgid "Directory Assistant "
+msgstr "Adresboek Assistent"
+
+#: directoryassistant:777
+msgid "Search for"
+msgstr "Zoek naar"
+
+#: directoryassistant:783
+msgid "in address book"
+msgstr "in adresboek"
+
+#: directoryassistant:809
+msgid "Results"
+msgstr "Resultaten"
+
+#: directoryassistant:824
+msgid "no results yet"
+msgstr "nog geen resultaten"

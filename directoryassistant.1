@@ -1,0 +1,44 @@
+.TH directoryassistant 1 10-12-2005 directoryassistant directoryassistant
+
+.SH NAME
+directoryassistant \- user friendly ldap addressbook frontend 
+
+.SH DESCRIPTION
+
+Directory Assistant is a small application for managing a LDAP 
+address book. The focus is to create a very easy to use program,
+with only the few but necessary features. The target is novice 
+users that need to keep their addresses in an LDAP server.
+
+.SH FILES
+
+Configuration is done by config file. Since novice users anyway 
+don't know how to configure LDAP access, I decided to remove that 
+from the GUI. The config file should be at
+.I /etc/directoryassistant
+or
+.I ~/.directoryassistant
+and should have the format:
+
+.nf
+.sp
+[My Ldap Server]
+ldapurl = ldap://your.ldap.server.com/
+base_dn = ou=department,ou=People,o=someorg
+.fi
+
+extended options are:
+.nf
+.sp
+bind_dn = cn=someaccount,o=someorg
+bind_password = yourpassword
+add_dn = ou=myunit,ou=department,ou=People,o=someorg
+ldapversion = 3
+startup_search =
+
+.fi
+
+.SH AUTHOR
+
+Directoryassistant is written by Olivier Sessink
+

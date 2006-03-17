@@ -1,0 +1,55 @@
+see http://olivier.sessink.nl/directoryassistant/
+
+**About**
+
+Directory Assistant is a small application for managing a LDAP 
+address book. The focus is to create a very easy to use program,
+with only the few but necessary features. The target is novice 
+users that still need to keep their addresses in an LDAP server.
+
+If you want an advanced application targeted at power users, 
+check out http://biot.com/gq/.
+
+**Download & install**
+
+Unpack the tarball, cd directoryassistant-1.0/ and run ./install.py. 
+It will show you the few files that are copied. (note: if it complains 
+about not having the gtk module installed, and you are sure you have 
+it, make sure you run the ./install.py script under X)
+
+Configuration is stored in /etc/directoryassistant or in ~/.directoryassistant
+
+[My Ldap Server]
+ldapurl = ldap://your.ldap.server.com/
+bind_dn = cn=someaccount,o=someorg
+bind_password = yourpassword
+base_dn = ou=department,ou=People,o=someorg
+add_dn = ou=myunit,ou=department,ou=People,o=someorg
+ldapversion = 3
+startup_search = 
+
+if you leave 'startup_search' empty, it will show all ldap entries
+
+**Contact**
+
+I have to make an email adress for this project.. In the meanwhile 
+contact me at olivier (at) olivier dot pk dot wau dot nl
+
+**Translations**
+
+First update the message catalog messages.pot `xgettext -L python directoryassistant`
+
+If there is no translation yet, copy messages.po to LANG.po
+If there is a translation already, merge the new messages with the 
+existing translation:
+`msgmerge --output-file=tmp.po nl.po messages.po && mv tmp.po LANG.po`
+Then edit LANG.po to fix any untranslated strings
+
+** Licence and copying **
+
+All files in the directoryassistant distribution, including this file, the 
+source code 'directoryassistant' , the images 'directoryassistant.png' and
+'decoration.png', the man page 'directoryassistant.1' and any other files, 
+are copyright (c) 2003,2004,2005,2006 Olivier Sessink and distributed under 
+the terms specified in the COPYING file.
+
