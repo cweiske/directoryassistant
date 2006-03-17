@@ -1,0 +1,913 @@
+#!/usr/bin/python
+#
+# Copyright (c) 2003,2004,2005,2006 Olivier Sessink
+# All rights reserved.
+#
+#Redistribution and use in source and binary forms, with or without
+#modification, are permitted provided that the following conditions 
+#are met:
+#  * Redistributions of source code must retain the above copyright 
+#    notice, this list of conditions and the following disclaimer.
+#  * Redistributions in binary form must reproduce the above 
+#    copyright notice, this list of conditions and the following 
+#    disclaimer in the documentation and/or other materials provided 
+#    with the distribution.
+#  * The names of its contributors may not be used to endorse or 
+#    promote products derived from this software without specific 
+#    prior written permission.
+#
+#THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+#"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+#LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS 
+#FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE 
+#COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, 
+#INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, 
+#BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+#LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+#CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT 
+#LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN 
+#ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
+#POSSIBILITY OF SUCH DAMAGE.
+#
+
+VERSIONSTRING = 'post2.0'
+
+import gtk
+import gobject
+import ldap
+import string
+import ConfigParser
+import os
+import gettext
+
+class field:
+	def __init__(self,name,title='',editable=0,multiline=0,inOrg=0):
+		self.name = name
+		self.title = title
+		self.editable = editable
+		self.multiline = multiline
+		self.inOrg = inOrg
+		self.action = None
+		self.hide = 0
+
+LDAP_KEY_MAP = []
+
+def init_key_map(cfg):
+	LDAP_KEY_MAP[:] = []
+	LDAP_KEY_MAP.append(field('cn',_('Common name'),0,0))
+	LDAP_KEY_MAP.append(field('sn',_('Surname'),1,0))
+	LDAP_KEY_MAP.append(field('givenName',_('Given name'),1,0))
+	LDAP_KEY_MAP.append(field('o',_('Organisation'),1,0,1))
+	LDAP_KEY_MAP.append(field('mail',_('Email'),1,0))
+	LDAP_KEY_MAP.append(field('telephoneNumber',_('Business phone number'),1,0,1))
+	LDAP_KEY_MAP.append(field('facsimileTelephoneNumber',_('Fax number'),1,0,1))
+	LDAP_KEY_MAP.append(field('mobile',_('Mobile phone number'),1,0))
+	LDAP_KEY_MAP.append(field('street',_('Street'),1,0,1))
+	LDAP_KEY_MAP.append(field('postOfficeBox',_('P.O. Box'),1,0,1))
+	LDAP_KEY_MAP.append(field('postalAddress',_('Postal address'),1,1,1))
+	LDAP_KEY_MAP.append(field('postalCode',_('Postal code'),1,0,1))
+	LDAP_KEY_MAP.append(field('l',_('Locality'),1,0,1))
+	LDAP_KEY_MAP.append(field('homePhone',_('Home phone number'),1,0))
+	LDAP_KEY_MAP.append(field('homePostalAddress',_('Home address'),1,1))
+	LDAP_KEY_MAP.append(field('description',_('Description'),1,1,1))
+	
+	defs = cfg.defaults()
+	if (len(defs)):
+		for k in defs:
+			if (k[0:10]=='keyaction_'):
+				i= index_for_key(k[10:])
+				if (i != None):
+					LDAP_KEY_MAP[i].action = defs[k]
+			if (k[0:8]=='keyhide_'):
+				i= index_for_key(k[8:])
+				if (i != None):
+					LDAP_KEY_MAP[i].hide = 1
+
+def all_keys():
+	ret = []
+	for field in LDAP_KEY_MAP:
+		ret = ret + [field.name]
+	return ret
+
+def all_editable_keys(inOrg=0):
+	ret = []
+	for field in LDAP_KEY_MAP:
+		if (field.editable and (inOrg == 0 or field.inOrg == 1)):
+			ret = ret + [field.name]
+	return ret
+
+def index_for_key(key):
+	i=len(LDAP_KEY_MAP)
+	while (i>0):
+		i -= 1
+#		print 'index',i
+		if (LDAP_KEY_MAP[i].name.lower() == key.lower()):
+			return int(i)
+	print 'did not find index for key',key
+	return None
+
+def field_for_key(key):
+	for field in LDAP_KEY_MAP:
+		if (field.name.lower() == key.lower()):
+			return field
+	return None
+
+class MyEntry:
+	widget = None
+	multiline = 0
+	
+	def __init__(self,multiline=0):
+		self.multiline = multiline
+		if (self.multiline):
+			self.buffer = gtk.TextBuffer()
+			self.view = gtk.TextView(self.buffer)
+			self.widget = gtk.ScrolledWindow()
+			self.widget.add(self.view)
+			self.widget.set_policy(gtk.POLICY_AUTOMATIC,gtk.POLICY_AUTOMATIC)
+			self.widget.set_shadow_type(gtk.SHADOW_ETCHED_IN)
+		else:
+			self.widget = gtk.Entry()
+
+	def get_text(self):
+		if (self.multiline):
+			iters = self.buffer.get_bounds()
+			return self.buffer.get_text(iters[0],iters[1])
+		else:
+			return self.widget.get_text()
+	
+	def set_text(self,text):
+		if (self.multiline):
+			self.buffer.set_text(text)
+		else:
+			self.widget.set_text(text)
+
+class LdapBackend:
+	"This class will do all actual ldap communication"
+	def connect(self,debug=0):
+#		print 'connect to ',self.ldapurl,'with version',self.ldapversion
+		self.ld = ldap.initialize(self.ldapurl,trace_level=debug)
+		if (self.ldapversion != None):
+			self.ld.set_option(ldap.OPT_PROTOCOL_VERSION,self.ldapversion)
+		if (self.binddn != None and self.bindpw != None):
+#			print 'try user ',self.binddn
+			try:
+				self.ld.simple_bind_s(self.binddn, self.bindpw)
+			except ldap.INVALID_CREDENTIALS:
+				print 'Invalid ldap user or password'
+	
+	def __init__(self,cfg,section,debug=0):
+		self.name = section
+		self.ldapurl = cfg.get(section, 'ldapurl')
+		self.baseDN = cfg.get(section, 'base_dn')
+		try:
+			self.binddn = cfg.get(section, 'bind_dn')
+			self.bindpw = cfg.get(section, 'bind_password')
+		except ConfigParser.NoOptionError:
+			self.binddn = None
+			self.bindpw = None
+		try:
+			self.ldapversion = int(cfg.get(section, 'ldapversion'))
+		except (ConfigParser.NoOptionError,ValueError):
+			self.ldapversion = None
+		try:
+			self.addDN = cfg.get(section,'add_dn')
+		except (ConfigParser.NoOptionError):
+			self.addDN = self.baseDN
+		self.connect(debug)
+	
+	def get_address(self,dn):
+		filter = dn[:string.find(dn,',')]
+		try:
+			entry = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,filter,all_keys())[0][1]
+		except ldap.SERVER_DOWN:
+			self.connect(0)
+			entry = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,filter,all_keys())[0][1]
+		return entry
+
+	def get_dnlist_name(self,name):
+		if (len(name)>0):
+			pat = '(|(cn=*'+name+'*)(sn=*'+name+'*)(givenName=*'+name+'*)(o=*'+name+'*))'
+		else:
+			pat = '(|(cn=*)(o=*))'
+#		print 'searching for '+pat+' in '+self.baseDN
+		try:
+			res = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,pat,['cn','o'])
+		except ldap.SERVER_DOWN:
+			self.connect(0)
+			res = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,pat,['cn','o'])
+		results = {}
+		i=len(res)-1
+#		print 'found ',len(res),'results'
+		while (i >= 0):
+			dn = res[i][0]
+			if (res[i][1].has_key('cn')):
+				name = res[i][1]['cn'][0]
+			elif (res[i][1].has_key('o')):
+				name = res[i][1]['o'][0]
+			else:
+				name = _('No name')
+				print 'no name',res[i]
+			results[dn] = name
+			i -= 1
+		return results
+	
+	def saveAddress(self,newaddress):
+		modlist = []
+		# check for person or organisation
+		if (newaddress.has_key('sn') or newaddress.has_key('givenName')):
+			modlist.append(('objectClass', 'inetOrgPerson'))
+			if (newaddress.has_key('sn') and newaddress.has_key('givenName')):
+				cn = newaddress['givenName'][0]+' '+newaddress['sn'][0]
+			elif (newaddress.has_key('sn')):
+				cn = newaddress['sn'][0]
+			else:
+				cn = newaddress['givenName'][0]
+			modlist.append(('cn', cn))
+			dn = 'cn='+cn+','+self.addDN
+			for key in all_editable_keys(0):
+				if (newaddress.has_key(key) and len(newaddress[key]) > 0):
+					modlist.append((key, newaddress[key]))
+		elif (newaddress.has_key('o')):
+			modlist.append(('objectClass', 'organization'))
+			o = newaddress['o'][0]
+			dn = 'o='+o+','+self.addDN
+			for key in all_editable_keys(1):
+				if (newaddress.has_key(key) and len(newaddress[key]) > 0):
+					modlist.append((key, newaddress[key]))
+		else:
+			return 0
+		print 'save with dn',dn
+		try:
+			self.ld.add_s(dn, modlist)
+			return 1
+		except ldap.SERVER_DOWN:
+			self.connect(0)
+			self.ld.add_s(dn, modlist)
+			return 1
+		except ldap.INSUFFICIENT_ACCESS:
+			return 0
+		
+	def modifyAddress(self,dn,oldaddress,newaddress):
+		modlist = []
+# BUG: WHAT HAPPENS IF THERE IS A BACKSLASH ESCAPED COMMA IN THE DN !!!!!!!!!!
+		pos = string.find(dn, ',')
+		if (pos > 0):
+			tmpaddDN = dn[pos+1:]
+		else:
+			tmpaddDN = self.addDN
+		if (newaddress.has_key('sn') or newaddress.has_key('givenName')):
+			if (newaddress.has_key('sn') and newaddress.has_key('givenName')):
+				cn = newaddress['givenName'][0]+' '+newaddress['sn'][0]
+			elif (newaddress.has_key('sn')):
+				cn = newaddress['sn'][0]
+			else:
+				cn = newaddress['givenName'][0]
+			new_dn = 'cn='+cn+','+tmpaddDN
+			for key in all_editable_keys():
+				if ((not newaddress.has_key(key) or len(newaddress[key]) == 0) and oldaddress.has_key(key) and len(oldaddress[key]) > 0):
+					modlist.append((ldap.MOD_DELETE,key,()))
+				elif (newaddress.has_key(key)):
+					modlist.append((ldap.MOD_REPLACE, key, newaddress[key]))
+		elif (newaddress.has_key('o')):
+			new_dn = 'o='+newaddress['o'][0]+','+tmpaddDN
+			for key in all_editable_keys(1):
+				if (key != 'o' and (not newaddress.has_key(key) or len(newaddress[key]) == 0) and oldaddress.has_key(key) and len(oldaddress[key]) > 0):
+#					print 'delete',key
+					modlist.append((ldap.MOD_DELETE,key,()))
+				elif (key != 'o' and newaddress.has_key(key)):
+#					print 'replace',key,newaddress[key]
+					modlist.append((ldap.MOD_REPLACE, key, newaddress[key]))
+		else:
+			return
+#		print 'new_dn=',new_dn
+#		print 'modlist',modlist
+		self.ld.modify_s(dn, modlist)
+		if (new_dn != dn):
+			new_rdn = ldap.explode_dn(new_dn)[0]
+			self.ld.modrdn_s(dn, new_rdn)
+
+	def deleteAddress(self,dn):
+		try:
+			self.ld.delete_s(dn)
+		except ldap.LDAPError, e:
+			print e
+
+class EditGui:
+	"This class is the gtk gui for the editor"
+	
+	def getlistforkey(self,key):
+		lst = []
+		if (not self.entry.has_key(key)):
+			return lst
+		j = len(self.entry[key])
+		field = field_for_key(key)
+		
+		for i in range(0,j):
+			tmp = self.entry[key][i].get_text()
+			if (len(tmp)>0):
+				lst.append(tmp)
+		return lst
+	
+	def getnewaddress(self):
+		newaddress = {}
+		for key in all_editable_keys():
+			tmp = self.getlistforkey(key)
+			if (len(tmp)):
+				newaddress[key] = tmp
+		return newaddress
+
+	def response(self,data,num):
+		if (num == gtk.RESPONSE_CANCEL):
+			self.window.destroy()
+		elif (num == gtk.RESPONSE_ACCEPT):
+			newaddress = self.getnewaddress()
+			try:
+				if (self.dn):
+					self.lb.modifyAddress(self.dn,self.address,newaddress)
+				else:
+					self.lb.saveAddress(newaddress)
+				self.window.destroy()
+				return
+			except ldap.SERVER_DOWN:
+				message = 'address server down'
+			except ldap.INSUFFICIENT_ACCESS:
+				message = 'Permission was denied while trying to save the address'
+			dialog = gtk.MessageDialog(parent=self.window, flags=gtk.DIALOG_DESTROY_WITH_PARENT, 
+						type=gtk.MESSAGE_ERROR, buttons=gtk.BUTTONS_OK,message_format = message)
+			dialog.set_title('Error')
+			dialog.connect('response', lambda dialog, response: dialog.destroy())
+			dialog.show_all()
+
+	def plusclicked(self,widget,key):
+		field = field_for_key(key)
+		tmp = MyEntry(field.multiline)
+		self.entry[key].append(tmp)
+		self.vbox[key].pack_start(tmp.widget)
+		tmp.widget.show()
+	
+
+	def addfieldentry(self,address,field,table,startat):
+#		print 'adding ',field.title,field.name,'at startat=',startat
+		table.attach(gtk.Label(field.title), 0,1,startat, startat+1,xoptions=gtk.FILL)
+		if (field.editable):
+			button = gtk.Button('+')
+			button.connect('clicked', self.plusclicked, field.name)
+			self.entry[field.name] = []
+			self.vbox[field.name] = gtk.VBox(True)
+			table.attach(self.vbox[field.name], 1,2,startat, startat+1,xoptions=gtk.EXPAND|gtk.FILL)
+			i=0
+			if (not address.has_key(field.name)):
+				self.entry[field.name].append(MyEntry(field.multiline))
+				self.vbox[field.name].pack_start(self.entry[field.name][i].widget)
+			else:
+				j = len(address[field.name])
+				for i in range(0,j):
+					self.entry[field.name].append(MyEntry(field.multiline))
+					self.entry[field.name][i].set_text(address[field.name][i])
+					self.vbox[field.name].pack_start(self.entry[field.name][i].widget)
+			table.attach(button, 2,3,startat, startat+1,xoptions=gtk.FILL,yoptions=0)
+		else:
+			if (address.has_key(field.name)):
+				table.attach(gtk.Label(address[field.name][0]),1,2,startat, startat+1,xoptions=gtk.FILL)
+	
+	def __init__(self, parentwin, lb, dn, address):
+		self.address = address
+		self.dn = dn
+		self.lb = lb
+		self.window = gtk.Dialog(_('Edit Address'),parentwin,gtk.DIALOG_DESTROY_WITH_PARENT,(gtk.STOCK_CANCEL,gtk.RESPONSE_CANCEL, gtk.STOCK_OK,gtk.RESPONSE_ACCEPT))
+		self.window.set_border_width(6)
+		vbox1 = self.window.vbox
+
+		hbox1 = gtk.HBox(True, True)
+		vbox1.pack_start(hbox1)
+
+		if (dn != None and len(dn)>0 and dn[0] == 'o'):
+			isOrg = 1
+			numkeys = len(all_editable_keys(1))
+		else:
+			isOrg = 0
+			numkeys = len(LDAP_KEY_MAP)
+
+		self.ltable = gtk.Table((numkeys/2)+1, 3, False)
+		self.ltable.set_row_spacings(6)
+		self.ltable.set_col_spacings(6)
+		hbox1.pack_start(self.ltable)
+		self.rtable = gtk.Table((numkeys/2)+1, 3, False)
+		self.rtable.set_row_spacings(6)
+		self.rtable.set_col_spacings(6)
+		hbox1.pack_start(self.rtable)
+		self.entry = {}
+		self.vbox = {}
+		
+		i = 0
+		for field in LDAP_KEY_MAP:
+#			print field.name
+			if ((field.inOrg == 1 or field.inOrg == isOrg) and (field.hide != 1 or address.has_key(field.name))):
+				if (i > numkeys/2):
+					self.addfieldentry(address,field,self.rtable,i-numkeys/2)
+				else:
+					self.addfieldentry(address,field,self.ltable,i)
+				i = i + 1
+		self.window.connect('response',self.response)
+		self.window.show_all()
+
+class PrefsGui:
+	cfg = None
+	selected = None
+
+	def writeConfig(self):
+		fd = open(os.getenv('HOME')+'/.directoryassistant','w')
+		self.cfg.write(fd)
+		fd.close()
+	
+	def applyifset(self,entry,section,key,removeempty):
+		try:
+			tmp = entry.get_text()
+			if (removeempty and len(tmp)==0):
+				self.cfg.remove_option(section,key)
+			else:
+#				print 'set in config:',section,key,tmp
+				self.cfg.set(section,key,tmp)
+		except NoSectionError:
+			print 'no such section',section
+	
+	def apply(self):
+		if (self.selected):
+			type,key = self.selected
+			if (type == 1):
+				self.applyifset(self.ldapurl,key,'ldapurl',0)
+				self.applyifset(self.base_dn,key,'base_dn',0)
+				self.applyifset(self.bind_dn,key,'bind_dn',1)
+				self.applyifset(self.bind_password,key,'bind_password',1)
+				self.applyifset(self.startup_search,key,'startup_search',1)
+				self.applyifset(self.ldapversion,key,'ldapversion',1)
+			else:
+				self.applyifset(self.action,'DEFAULT','keyaction_'+key,1)
+				self.applyifset(self.hide,'DEFAULT','keyhide_'+key,1)
+				init_key_map(self.cfg)
+			
+		if (self.rframe.child):
+			self.rframe.child.destroy()
+
+	def okClicked(self,bla1,bla2):
+		self.apply()
+		self.writeConfig()
+		self.window.destroy()
+
+	def set_server_entry(self,server,key,entry):
+		try:
+			entry.set_text(self.cfg.get(server,key))
+		except ConfigParser.NoOptionError:
+			pass
+
+	def serverSelected(self,key):
+		table = gtk.Table(6,2,True)
+		table.attach(gtk.Label(_('Ldap url')),0,1,0,1)
+		self.ldapurl = gtk.Entry()
+		table.attach(self.ldapurl,1,2,0,1)
+		self.set_server_entry(key,'ldapurl',self.ldapurl)
+		
+		table.attach(gtk.Label(_('Base dn')),0,1,1,2)
+		self.base_dn = gtk.Entry()
+		table.attach(self.base_dn,1,2,1,2)
+		self.set_server_entry(key,'base_dn',self.base_dn)
+		
+		table.attach(gtk.Label(_('Bind dn')),0,1,2,3)
+		self.bind_dn = gtk.Entry()
+		table.attach(self.bind_dn,1,2,2,3)
+		self.set_server_entry(key,'bind_dn',self.bind_dn)
+		
+		table.attach(gtk.Label(_('Password')),0,1,3,4)
+		self.bind_password = gtk.Entry()
+		table.attach(self.bind_password,1,2,3,4)
+		self.set_server_entry(key,'bind_password',self.bind_password)
+		
+		table.attach(gtk.Label(_('Default search')),0,1,4,5)
+		self.startup_search = gtk.Entry()
+		table.attach(self.startup_search,1,2,4,5)
+		self.set_server_entry(key,'startup_search',self.startup_search)
+		
+		table.attach(gtk.Label(_('Ldap version')),0,1,5,6)
+		self.ldapversion = gtk.Entry()
+		table.attach(self.ldapversion,1,2,5,6)
+		self.set_server_entry(key,'ldapversion',self.ldapversion)
+	
+		self.rframe.add(table)
+		table.show_all()
+
+	def newServerClicked(self,widget,entry):
+		name = entry.get_text()
+		self.cfg.add_section(name)
+		iter = self.tstore.append(self.serveriter)
+		self.tstore.set(iter, 0, name, 1,name,2,1)
+		selection = self.treev.get_selection()
+		self.treev.expand_to_path(self.tstore.get_path(iter))
+		selection.select_iter(iter)
+
+	def serverToplevelSelected(self):
+		table = gtk.Table(1,3,True)
+		table.attach(gtk.Label(_('Server name')),0,1,0,1,xoptions=gtk.FILL,yoptions=0)
+		self.newserver = gtk.Entry()
+		table.attach(self.newserver,1,2,0,1,xoptions=gtk.FILL|gtk.EXPAND,yoptions=0)
+		button = gtk.Button(gtk.STOCK_NEW)
+		button.set_use_stock(1)
+		button.connect('clicked',self.newServerClicked,self.newserver)
+		table.attach(button,2,3,0,1,xoptions=gtk.FILL,yoptions=0)
+		self.rframe.add(table)
+		table.show_all()
+
+	def fieldSelected(self,fieldname):
+		defs = self.cfg.defaults()
+		print defs
+		table = gtk.Table(2,2,False)
+		
+		table.attach(gtk.Label(_('Action on click')),0,1,0,1,xoptions=gtk.FILL)
+		self.action = gtk.Entry()
+		table.attach(self.action,1,2,0,1,xoptions=gtk.FILL|gtk.EXPAND)
+		tmp = 'keyaction_'+fieldname
+		if (defs.has_key(tmp.lower())):
+			self.action.set_text(defs[tmp.lower()])
+		
+		table.attach(gtk.Label(_('Hide')),0,1,1,2,xoptions=gtk.FILL)
+		self.hide = gtk.Entry()
+		table.attach(self.hide,1,2,1,2,xoptions=gtk.FILL|gtk.EXPAND)
+		tmp = 'keyhide_'+fieldname
+		if (defs.has_key(tmp.lower())):
+			self.hide.set_text(defs[tmp.lower()])
+	
+		self.rframe.add(table)
+		table.show_all()
+
+	def selectionChanged(self,data):
+#		print 'selectionChanged'
+		
+		self.apply()
+		self.selected = None
+		store,iter = data.get_selected()
+		type,key = store.get(iter,2,1)
+		if (type == 0):
+#			print 'toplevel selected'
+			self.serverToplevelSelected()
+		elif (type == 1):
+#			print 'server '+key+' selected'
+			self.selected = 1,key
+			self.serverSelected(key)
+		else:
+#			print 'field '+key+' selected'
+			self.selected = 2,key
+			self.fieldSelected(key)
+
+	def fillServers(self, piter):
+		for sect in self.cfg.sections():
+#			print 'append',sect,piter
+			iter = self.tstore.append(piter)
+			self.tstore.set(iter, 0, sect, 1,sect,2,1)
+
+	def fillFields(self,piter):
+		for field in LDAP_KEY_MAP:
+			iter = self.tstore.append(piter)
+			self.tstore.set(iter, 0, field.title, 1,field.name, 2,2)
+
+
+	def __init__(self, parent,cfg):
+		self.cfg = cfg
+		self.window = gtk.Dialog(_('Directory Assistant Settings'),parent,gtk.DIALOG_DESTROY_WITH_PARENT,(gtk.STOCK_OK,gtk.RESPONSE_ACCEPT))
+
+		vbox = self.window.vbox
+		
+		paned = gtk.HPaned()
+		vbox.pack_start(paned, True, True)
+		#the left pane
+		scrolpane = gtk.ScrolledWindow()
+		self.tstore = gtk.TreeStore(str, str, int)
+
+		self.serveriter = self.tstore.append(None)
+		self.tstore.set(self.serveriter, 0, _('Servers'), 2,0)
+		self.fillServers(self.serveriter)
+
+		self.fielditer = self.tstore.append(None)
+		self.tstore.set(self.fielditer,  0,_('Fields'), 2,0)
+		self.fillFields(self.fielditer)
+
+		self.treev = gtk.TreeView(self.tstore)
+		scrolpane.set_size_request(150,200)
+		rend = gtk.CellRendererText()
+		column = gtk.TreeViewColumn(None, rend, text=0)
+		self.treev.append_column(column)
+		selection = self.treev.get_selection()
+		selection.set_mode(gtk.SELECTION_SINGLE)
+		selection.connect('changed', self.selectionChanged)
+		scrolpane.add_with_viewport(self.treev)
+		paned.add1(scrolpane)
+		#the right pane
+		self.rframe = gtk.Frame()
+		self.rframe.set_shadow_type(gtk.SHADOW_IN)
+		self.rframe.add(gtk.Label())
+		paned.add2(self.rframe)
+
+		self.window.set_default_size(300,-1)
+		self.window.show_all()
+		self.window.connect('response',self.okClicked)
+
+class AddressGui:
+	"This class is the GTK GUI for the main window"
+	dn = None
+	address = None
+	lb = None
+	cfg = None
+	
+	def delete_event(self, widget, data):
+		return False
+		
+	def destroy(self, widget, data=None):
+		gtk.main_quit()
+	
+	def treevClicked(self,treev,event):
+		if (event.type == 4):
+			# 4 seems to be single-click, so we refresh
+			if (self.dn != None):
+				self.address = self.lb.get_address(self.dn)
+				self.set_address_label(self.address)
+		# 5 seems to be doubleclick, and 6 tripleclick
+		if (event.type >= 5):
+			if (self.dn):
+				ea = EditGui(self.window,self.lb,self.dn,self.address)
+	
+	def newClicked(self,bla):
+		ea = EditGui(self.window,self.lb,'',{})
+
+	def deleteClicked(self,bla):
+		if (self.dn != None):
+			self.lb.deleteAddress(self.dn)
+			self.dn = None
+			self.address = None
+			self.searchClicked(None)	
+
+	def get_all(self,entry,prefix,suffix):
+		str = ''
+		i=len(entry)-1
+		print 'get_all, i=',i
+		if (i >= 0):
+			while (i >= 0):
+				str += prefix+self.prepare(entry[i])+suffix
+				i -= 1
+		return str
+	
+	def prepare(self,str):
+		str = string.replace(str,'&', '&amp;')
+		str = string.replace(str,'<', '&lt;')
+		str = string.replace(str,'>', '&gt;')
+		return str
+	
+	def set_warning_label(self,message):
+		if (self.rpanetable != None):
+			self.rpanetable.destroy()
+			self.rpanetable = None
+		self.wlabel = gtk.Label()
+		self.wlabel.set_markup(message)
+		self.rframe.add(self.wlabel)
+		self.wlabel.show()
+	
+	def label_clicked(self,widget,event,fieldname):
+		f = field_for_key(fieldname)
+		tmp = f.action % widget.child.get_text()
+#		print 'tmp=',tmp
+		os.system(tmp)
+	
+	def create_label(self,vbox,fieldname,text):
+		label = gtk.Label()
+		
+		label.set_alignment(0,0)
+		label.set_justify(gtk.JUSTIFY_LEFT)
+		f = field_for_key(fieldname)
+		if (f.action != None):
+			label.set_markup('<u>'+text+'</u>')
+			evbox = gtk.EventBox()
+			evbox.connect("button-press-event", self.label_clicked,fieldname)
+			evbox.add(label)
+			vbox.pack_start(evbox)
+			evbox.realize()
+			hand = gtk.gdk.Cursor(gtk.gdk.HAND1)
+			evbox.window.set_cursor(hand)
+		else:
+			label.set_selectable(True)
+			label.set_markup(''+text+'')
+			vbox.pack_start(label)
+
+	def set_address_label(self,entry):
+		if (self.wlabel):
+			self.wlabel.destroy()
+			self.wlabel = None
+		else:
+			self.rpanetable.destroy()
+#		self.label = gtk.Label()
+#		self.label.set_size_request(250,200)
+#		self.label.set_selectable(True)
+		self.rpanetable = gtk.Table(len(LDAP_KEY_MAP),2,False)
+		self.rpanetable.set_col_spacings(5)
+		self.rframe.add(self.rpanetable)
+		i = 0
+		for field in LDAP_KEY_MAP:
+#			print 'include field',field.name
+			if (entry.has_key(field.name)):
+				label = gtk.Label()
+				label.set_markup('<b><small>'+field.title+'</small></b>')
+				label.set_alignment(0,0)
+				self.rpanetable.attach(label, 0,1,i, i+1,xoptions=gtk.FILL,yoptions=gtk.FILL)
+				vbox = gtk.VBox()
+				self.rpanetable.attach(vbox, 1,2,i, i+1,xoptions=gtk.FILL,yoptions=0)
+				j=0
+				while (j < len(entry[field.name])):
+					self.create_label(vbox,field.name,entry[field.name][j])
+					j += 1
+				i = i + 1
+#			else:
+#				print 'ignore field',field.name
+		self.rpanetable.show_all()
+
+	def searchClicked(self, bla):
+		if (self.ldservers != None):
+			server = self.ldservers.get_active_text()
+			if (self.lb.name != server):
+#				print 'switch to new server '+server
+				self.lb = LdapBackend(self.cfg,server,0)
+		self.listm.clear()
+		str = self.entry.get_text()
+		try:
+			tmp1 = self.lb.get_dnlist_name(str)
+			iter = None
+			for k, v in tmp1.iteritems():
+				iter = self.listm.prepend()
+				self.listm.set(iter, 0, v, 1, k)
+#				print 'prepending '+k+' with v='+v
+			if (iter != None):
+				iter = self.listm.get_iter_first()
+				selection = self.treev.get_selection()
+				selection.select_iter(iter)
+				self.treev.grab_focus()
+		except ldap.SERVER_DOWN:
+			self.set_warning_label('<span foreground="red"><b>'+_('address server not available')+'</b></span>')
+	
+	def closeClicked(self,bla):
+		self.window.destroy()
+
+	def prefsClicked(self,bla):
+		pg = PrefsGui(self.window,self.cfg)
+
+	def selectionChanged(self, data):
+		store = data.get_selected()[0]
+		iter = data.get_selected()[1]
+		if (iter == None):
+			return
+		try:
+			self.dn = store.get_value(iter,1)
+			self.address = self.lb.get_address(self.dn)
+			self.set_address_label(self.address)
+		except ldap.SERVER_DOWN:
+			self.dn = None
+			self.address = None
+			self.set_warning_label("no result")
+
+	def __init__(self):
+		self.cfg = ConfigParser.SafeConfigParser()
+		self.cfg.read((os.getenv('HOME')+'/.directoryassistant', '/etc/directoryassistant'))
+		init_key_map(self.cfg)
+		
+		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+		self.window.set_title(_("Directory Assistant ")+VERSIONSTRING)
+		self.window.set_role('directoryassistant')
+		self.window.set_border_width(10)
+		try:
+			pixbuf = gtk.gdk.pixbuf_new_from_file('/home2/olivier/directoryassistant/newlogo2.svg')
+			gtk.window_set_default_icon(pixbuf)
+		except gobject.GError:
+			pass
+		self.window.connect('delete_event', self.delete_event)
+		self.window.connect('destroy', self.destroy)
+		self.window.set_border_width(10)
+		vbox = gtk.VBox(False,10)
+		self.window.add(vbox)
+		# the search toolbar
+		hbox = gtk.HBox()
+		vbox.pack_start(hbox, False, True)
+		image = gtk.Image()
+		image.set_from_file('/home2/olivier/directoryassistant/newlogo2.svg')
+		hbox.pack_start(image)
+		self.table = gtk.Table(2, 2, False)
+		self.table.set_row_spacings(10)
+		self.table.set_col_spacings(10)
+		hbox.pack_start(self.table)
+
+		label = gtk.Label(_("Search for"))
+		self.table.attach(label,0,1,0,1)
+		self.entry = gtk.Entry()
+		self.entry.connect("activate", self.searchClicked)
+		self.table.attach(self.entry,1,2,0,1)
+		if (len(self.cfg.sections()) >1):
+			label = gtk.Label(_("in address book"))
+			self.table.attach(label,0,1,1,2)
+			self.ldservers = gtk.combo_box_new_text()
+			lst = self.cfg.sections()
+			lst.reverse()
+			for sect in lst:
+				if (self.lb == None):
+					self.lb = LdapBackend(self.cfg,sect,0)
+				self.ldservers.append_text(sect)
+			self.ldservers.set_active(0)
+			self.table.attach(self.ldservers,1,2,1,2)
+		else:
+			self.ldservers = None
+			for sect in self.cfg.sections():
+				self.lb = LdapBackend(self.cfg,sect,0)
+				break
+		# the paned
+		paned = gtk.HPaned()
+		vbox.pack_start(paned, True, True)
+		#the left pane
+		scrolpane = gtk.ScrolledWindow()
+		self.listm = gtk.ListStore(str,str)
+		self.listm.set_sort_column_id(1, gtk.SORT_ASCENDING)
+		self.treev = gtk.TreeView(self.listm)
+		scrolpane.set_size_request(150,200)
+		rend = gtk.CellRendererText()
+		column = gtk.TreeViewColumn(_('Results'), rend, text=0)
+		self.treev.append_column(column)
+		selection = self.treev.get_selection()
+		selection.set_mode(gtk.SELECTION_SINGLE)
+		selection.connect('changed', self.selectionChanged)
+		self.treev.connect('button_press_event',self.treevClicked)
+		scrolpane.add_with_viewport(self.treev)
+		paned.add1(scrolpane)
+		#the right pane
+		self.rframe = gtk.Frame()
+		self.rframe.set_shadow_type(gtk.SHADOW_IN)
+		self.rpanetable = None
+#		self.label = gtk.Label()
+#		self.label.set_size_request(250,200)
+#		self.label.set_selectable(True)
+		self.set_warning_label(_("no results yet"));
+#		self.rframe.add(self.label)
+		paned.add2(self.rframe)
+		# buttonbox
+		bbox = gtk.HButtonBox()
+		bbox.set_layout(gtk.BUTTONBOX_END)
+		bbox.set_spacing(10)
+
+		button = gtk.Button(gtk.STOCK_PREFERENCES)
+		button.set_use_stock(1)
+		bbox.add(button)
+		button.connect('clicked', self.prefsClicked)
+
+		button = gtk.Button(gtk.STOCK_NEW)
+		button.set_use_stock(1)
+		bbox.add(button)
+		button.connect('clicked', self.newClicked)
+
+		button = gtk.Button(gtk.STOCK_DELETE)
+		button.set_use_stock(1)
+		bbox.add(button)
+		button.connect('clicked', self.deleteClicked)
+
+		button = gtk.Button(gtk.STOCK_CLOSE)
+		button.connect('clicked', self.closeClicked)
+		button.set_use_stock(1)
+		bbox.add(button)
+
+		button = gtk.Button(gtk.STOCK_FIND)
+		button.set_use_stock(1)
+		button.connect('clicked',self.searchClicked)
+		bbox.add(button)
+
+		button.set_flags(gtk.CAN_DEFAULT)
+		self.window.set_default(button)
+
+		vbox.pack_start(bbox,False,True)
+		self.window.show_all()
+		try:
+			self.entry.set_text(self.cfg.get(self.lb.name, 'startup_search'))
+			self.searchClicked(None)
+		except ConfigParser.NoOptionError:
+			pass
+		self.entry.grab_focus()
+
+	def main(self):
+		gtk.main()
+
+class ErrorMessage:
+	def quit(self, wid, data):
+		gtk.main_quit()
+	def __init__(self, message):
+		dialog = gtk.Dialog(title="ERROR", flags=gtk.DIALOG_MODAL, buttons=(gtk.STOCK_OK, 1))
+		label = gtk.Label()
+		label.set_markup('<b>'+message+'</b>')
+		dialog.vbox.pack_start(label, True, True, 0)
+		dialog.connect('close',self.quit)
+		dialog.connect('response',self.quit)
+		dialog.show_all()
+
+		gtk.main()
+
+if __name__ == "__main__":
+	gettext.install('directoryassistant','/usr/share/locale', unicode=1)
+	ag = AddressGui()
+	ag.main()
