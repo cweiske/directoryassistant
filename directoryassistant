@@ -883,11 +883,12 @@ class AddressGui:
 
 		vbox.pack_start(bbox,False,True)
 		self.window.show_all()
-		try:
-			self.entry.set_text(self.cfg.get(self.lb.name, 'startup_search'))
-			self.searchClicked(None)
-		except ConfigParser.NoOptionError:
-			pass
+		if (self.lb != None):
+			try:
+				self.entry.set_text(self.cfg.get(self.lb.name, 'startup_search'))
+				self.searchClicked(None)
+			except ConfigParser.NoOptionError:
+				pass
 		self.entry.grab_focus()
 
 	def main(self):
