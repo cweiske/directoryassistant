@@ -414,6 +414,7 @@ class EditGui:
 class PrefsGui:
 	cfg = None
 	selected = None
+	addressgui = None
 
 	def writeConfig(self):
 		fd = open(os.getenv('HOME')+'/.directoryassistant','w')
@@ -452,6 +453,7 @@ class PrefsGui:
 	def okClicked(self,bla1,bla2):
 		self.apply()
 		self.writeConfig()
+		self.addressgui.serverGui()
 		self.window.destroy()
 
 	def set_server_entry(self,server,key,entry):
@@ -569,9 +571,10 @@ class PrefsGui:
 			self.tstore.set(iter, 0, field.title, 1,field.name, 2,2)
 
 
-	def __init__(self, parent,cfg):
+	def __init__(self, addressgui,cfg):
 		self.cfg = cfg
-		self.window = gtk.Dialog(_('Directory Assistant Settings'),parent,gtk.DIALOG_DESTROY_WITH_PARENT,(gtk.STOCK_OK,gtk.RESPONSE_ACCEPT))
+		self.addressgui = addressgui
+		self.window = gtk.Dialog(_('Directory Assistant Settings'),addressgui.window,gtk.DIALOG_DESTROY_WITH_PARENT,(gtk.STOCK_OK,gtk.RESPONSE_ACCEPT))
 
 		vbox = self.window.vbox
 		
@@ -615,6 +618,7 @@ class AddressGui:
 	address = None
 	lb = None
 	cfg = None
+	ldservers = None
 	
 	def delete_event(self, widget, data):
 		return False
@@ -752,7 +756,7 @@ class AddressGui:
 		self.window.destroy()
 
 	def prefsClicked(self,bla):
-		pg = PrefsGui(self.window,self.cfg)
+		pg = PrefsGui(self,self.cfg)
 
 	def selectionChanged(self, data):
 		store = data.get_selected()[0]
@@ -767,6 +771,29 @@ class AddressGui:
 			self.dn = None
 			self.address = None
 			self.set_warning_label("no result")
+
+	def serverGui(self):
+		if (self.ldservers != None):
+			self.ldservers.destroy()
+		#print 'have ', len(self.cfg.sections()), 'sections'
+		if (len(self.cfg.sections()) >1):
+			label = gtk.Label(_("in address book"))
+			self.table.attach(label,0,1,1,2)
+			self.ldservers = gtk.combo_box_new_text()
+			lst = self.cfg.sections()
+			lst.reverse()
+			for sect in lst:
+				if (self.lb == None):
+					self.lb = LdapBackend(self.cfg,sect,0)
+				self.ldservers.append_text(sect)
+			self.ldservers.set_active(0)
+			self.table.attach(self.ldservers,1,2,1,2)
+			self.table.show_all()
+		else:
+			self.ldservers = None
+			for sect in self.cfg.sections():
+				self.lb = LdapBackend(self.cfg,sect,0)
+				break
 
 	def __init__(self):
 		self.cfg = ConfigParser.SafeConfigParser()
@@ -803,23 +830,7 @@ class AddressGui:
 		self.entry = gtk.Entry()
 		self.entry.connect("activate", self.searchClicked)
 		self.table.attach(self.entry,1,2,0,1)
-		if (len(self.cfg.sections()) >1):
-			label = gtk.Label(_("in address book"))
-			self.table.attach(label,0,1,1,2)
-			self.ldservers = gtk.combo_box_new_text()
-			lst = self.cfg.sections()
-			lst.reverse()
-			for sect in lst:
-				if (self.lb == None):
-					self.lb = LdapBackend(self.cfg,sect,0)
-				self.ldservers.append_text(sect)
-			self.ldservers.set_active(0)
-			self.table.attach(self.ldservers,1,2,1,2)
-		else:
-			self.ldservers = None
-			for sect in self.cfg.sections():
-				self.lb = LdapBackend(self.cfg,sect,0)
-				break
+		self.serverGui()
 		# the paned
 		paned = gtk.HPaned()
 		vbox.pack_start(paned, True, True)
