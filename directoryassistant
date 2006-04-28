@@ -112,6 +112,20 @@ def field_for_key(key):
 			return field
 	return None
 
+def dn_escape(val):
+	s = val.replace('\\', '\\\\')
+	for char in ',','<','>','=','+',';','"': 
+		s = s.replace(char, '\\'+char)
+	if (s[0] == '#' or s[0] == ' '):
+		s = '\\'+s
+	if (s[-1] == ' '):
+		s = '\\'+s
+	return s
+
+#def dn_unescape(val):
+#	s = val.replace('\\\\', '\\')
+#	s = s.replace('', '')
+
 class MyEntry:
 	widget = None
 	multiline = 0
@@ -176,7 +190,11 @@ class LdapBackend:
 		self.connect(debug)
 	
 	def get_address(self,dn):
-		filter = dn[:string.find(dn,',')]
+		# bug, there could be a blackslash escaped comma in here
+		#filter = dn[:string.find(dn,',')]
+		tmp = ldap.explode_dn(dn,0)
+		filter = tmp[0]
+		print 'get_address filter', filter
 		try:
 			entry = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,filter,all_keys())[0][1]
 		except ldap.SERVER_DOWN:
@@ -257,11 +275,11 @@ class LdapBackend:
 			tmpaddDN = self.addDN
 		if (newaddress.has_key('sn') or newaddress.has_key('givenName')):
 			if (newaddress.has_key('sn') and newaddress.has_key('givenName')):
-				cn = newaddress['givenName'][0]+' '+newaddress['sn'][0]
+				cn = dn_escape(newaddress['givenName'][0])+' '+dn_escape(newaddress['sn'][0])
 			elif (newaddress.has_key('sn')):
-				cn = newaddress['sn'][0]
+				cn = dn_escape(newaddress['sn'][0])
 			else:
-				cn = newaddress['givenName'][0]
+				cn = dn_escape(newaddress['givenName'][0])
 			new_dn = 'cn='+cn+','+tmpaddDN
 			for key in all_editable_keys():
 				if ((not newaddress.has_key(key) or len(newaddress[key]) == 0) and oldaddress.has_key(key) and len(oldaddress[key]) > 0):
@@ -269,7 +287,7 @@ class LdapBackend:
 				elif (newaddress.has_key(key)):
 					modlist.append((ldap.MOD_REPLACE, key, newaddress[key]))
 		elif (newaddress.has_key('o')):
-			new_dn = 'o='+newaddress['o'][0]+','+tmpaddDN
+			new_dn = 'o='+dn_escape(newaddress['o'][0])+','+tmpaddDN
 			for key in all_editable_keys(1):
 				if (key != 'o' and (not newaddress.has_key(key) or len(newaddress[key]) == 0) and oldaddress.has_key(key) and len(oldaddress[key]) > 0):
 #					print 'delete',key
@@ -279,7 +297,7 @@ class LdapBackend:
 					modlist.append((ldap.MOD_REPLACE, key, newaddress[key]))
 		else:
 			return
-#		print 'new_dn=',new_dn
+		print 'new_dn=',new_dn
 #		print 'modlist',modlist
 		self.ld.modify_s(dn, modlist)
 		if (new_dn != dn):
@@ -695,7 +713,7 @@ class AddressGui:
 			evbox.window.set_cursor(hand)
 		else:
 			label.set_selectable(True)
-			label.set_markup(''+text+'')
+			label.set_markup(''+self.prepare(text)+'')
 			vbox.pack_start(label)
 
 	def set_address_label(self,entry):
