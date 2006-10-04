@@ -157,6 +157,9 @@ class MyEntry:
 
 class LdapBackend:
 	"This class will do all actual ldap communication"
+
+	ld = None
+	
 	def connect(self,debug=0):
 #		print 'connect to ',self.ldapurl,'with version',self.ldapversion
 		self.ld = ldap.initialize(self.ldapurl,trace_level=debug)
@@ -187,7 +190,7 @@ class LdapBackend:
 			self.addDN = cfg.get(section,'add_dn')
 		except (ConfigParser.NoOptionError):
 			self.addDN = self.baseDN
-		self.connect(debug)
+		#self.connect(debug)
 	
 	def get_address(self,dn):
 		# bug, there could be a blackslash escaped comma in here
@@ -299,13 +302,24 @@ class LdapBackend:
 			return
 		print 'new_dn=',new_dn
 #		print 'modlist',modlist
-		self.ld.modify_s(dn, modlist)
+		try:
+			self.ld.modify_s(dn, modlist)
+		except ldap.SERVER_DOWN:
+			self.connect(0)
+			self.ld.modify_s(dn, modlist)
 		if (new_dn != dn):
 			new_rdn = ldap.explode_dn(new_dn)[0]
-			self.ld.modrdn_s(dn, new_rdn)
+			try:
+				self.ld.modrdn_s(dn, new_rdn)
+			except ldap.SERVER_DOWN:
+				self.connect(0)
+				self.ld.modrdn_s(dn, new_rdn)
 
 	def deleteAddress(self,dn):
 		try:
+			self.ld.delete_s(dn)
+		except ldap.SERVER_DOWN:
+			self.connect(0)
 			self.ld.delete_s(dn)
 		except ldap.LDAPError, e:
 			print e
@@ -920,7 +934,12 @@ class AddressGui:
 				pass
 		self.entry.grab_focus()
 
+	def connectldap(self):
+		self.lb.connect(0)
+		return 0
+
 	def main(self):
+		gobject.idle_add(self.connectldap)
 		gtk.main()
 
 class ErrorMessage:
