@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# Copyright (c) 2003,2004,2005,2006 Olivier Sessink
+# Copyright (c) 2003,2004,2005,2006,2007 Olivier Sessink
 # All rights reserved.
 #
 #Redistribution and use in source and binary forms, with or without
@@ -197,7 +197,7 @@ class LdapBackend:
 		#filter = dn[:string.find(dn,',')]
 		tmp = ldap.explode_dn(dn,0)
 		filter = tmp[0]
-		print 'get_address filter', filter
+#		print 'get_address filter', filter
 		try:
 			entry = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,filter,all_keys())[0][1]
 		except ldap.SERVER_DOWN:
@@ -828,8 +828,8 @@ class AddressGui:
 				break
 
 	def __init__(self):
-		self.cfg = ConfigParser.SafeConfigParser()
-		self.cfg.read((os.getenv('HOME')+'/.directoryassistant', '/etc/directoryassistant'))
+		self.cfg = ConfigParser.RawConfigParser()
+		self.cfg.read(('/etc/directoryassistant', os.getenv('HOME')+'/.directoryassistant'))
 		init_key_map(self.cfg)
 		
 		self.window = gtk.Window(gtk.WINDOW_TOPLEVEL)
@@ -868,10 +868,13 @@ class AddressGui:
 		vbox.pack_start(paned, True, True)
 		#the left pane
 		scrolpane = gtk.ScrolledWindow()
+		scrolpane.set_size_request(150,200)
+		scrolpane.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_AUTOMATIC)
+		
 		self.listm = gtk.ListStore(str,str)
 		self.listm.set_sort_column_id(1, gtk.SORT_ASCENDING)
 		self.treev = gtk.TreeView(self.listm)
-		scrolpane.set_size_request(150,200)
+		
 		rend = gtk.CellRendererText()
 		column = gtk.TreeViewColumn(_('Results'), rend, text=0)
 		self.treev.append_column(column)
@@ -879,7 +882,7 @@ class AddressGui:
 		selection.set_mode(gtk.SELECTION_SINGLE)
 		selection.connect('changed', self.selectionChanged)
 		self.treev.connect('button_press_event',self.treevClicked)
-		scrolpane.add_with_viewport(self.treev)
+		scrolpane.add(self.treev)
 		paned.add1(scrolpane)
 		#the right pane
 		self.rframe = gtk.Frame()
