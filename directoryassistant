@@ -267,8 +267,6 @@ class LdapBackend:
 			self.connect(0)
 			self.ld.add_s(dn, modlist)
 			return 1
-		except ldap.INSUFFICIENT_ACCESS:
-			return 0
 		
 	def modifyAddress(self,dn,oldaddress,newaddress):
 		modlist = []
@@ -363,9 +361,11 @@ class EditGui:
 				self.window.destroy()
 				return
 			except ldap.SERVER_DOWN:
-				message = 'address server down'
+				message = 'Address server was not accessible while trying to save the address'
 			except ldap.INSUFFICIENT_ACCESS:
 				message = 'Permission was denied while trying to save the address'
+			except ldap.ALREADY_EXISTS:
+				message = 'This person/organisation exists already'
 			dialog = gtk.MessageDialog(parent=self.window, flags=gtk.DIALOG_DESTROY_WITH_PARENT, 
 						type=gtk.MESSAGE_ERROR, buttons=gtk.BUTTONS_OK,message_format = message)
 			dialog.set_title('Error')
