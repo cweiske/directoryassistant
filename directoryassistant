@@ -195,17 +195,12 @@ class LdapBackend:
 		#self.connect(debug)
 	
 	def get_address(self,dn):
-		# bug, there could be a blackslash escaped comma in here
-		#filter = dn[:string.find(dn,',')]
-		tmp = ldap.explode_dn(dn,0)
-		filter = tmp[0]
-#		print 'get_address filter', filter
 		try:
-			entry = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,filter,all_keys())[0][1]
+			entry = self.ld.search_s(dn,ldap.SCOPE_BASE,attrlist=all_keys())
 		except ldap.SERVER_DOWN:
 			self.connect(0)
-			entry = self.ld.search_s(self.baseDN,ldap.SCOPE_SUBTREE,filter,all_keys())[0][1]
-		return entry
+			entry = self.ld.search_s(dn,ldap.SCOPE_BASE,attrlist=all_keys())
+		return entry[0][1]
 
 	def get_dnlist_name(self,name):
 		if (len(name)>0):
@@ -684,7 +679,7 @@ class AddressGui:
 	def get_all(self,entry,prefix,suffix):
 		str = ''
 		i=len(entry)-1
-		print 'get_all, i=',i
+#		print 'get_all, i=',i
 		if (i >= 0):
 			while (i >= 0):
 				str += prefix+self.prepare(entry[i])+suffix
