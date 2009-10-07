@@ -59,7 +59,7 @@ def init_key_map(cfg):
 	LDAP_KEY_MAP.append(field('cn',_('Common name'),0,0))
 	LDAP_KEY_MAP.append(field('sn',_('Surname'),1,0))
 	LDAP_KEY_MAP.append(field('givenName',_('Given name'),1,0))
-	LDAP_KEY_MAP.append(field('personalTitle',_('Title'),1,0))
+#	LDAP_KEY_MAP.append(field('personalTitle',_('Title'),1,0))
 	LDAP_KEY_MAP.append(field('o',_('Organisation'),1,0,1))
 	LDAP_KEY_MAP.append(field('mail',_('Email'),1,0))
 	LDAP_KEY_MAP.append(field('telephoneNumber',_('Business phone number'),1,0,1))
